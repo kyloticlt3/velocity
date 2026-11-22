@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thumbnail Grader – one-click color grading for thumbnails</title>
+<meta name="description" content="Drop in an image and color grade it like a high-level YouTube thumbnail. Runs 100% in your browser.">
+<style>
+:root{
+  --bg:#0c0d10; --panel:#14161b; --line:#262932; --text:#eceef3; --muted:#8b90a0;
+  --accent:#ff3d5a; --accent2:#ffb02e;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column;min-height:100vh}
+.hidden{display:none!important}
+kbd{background:#22252d;border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-size:12px}
+
+.top{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:800;letter-spacing:.2px;display:flex;align-items:center;gap:10px;font-size:16px}
+.dot{width:12px;height:12px;border-radius:50%;background:conic-gradient(var(--accent),var(--accent2),#35e0c0,var(--accent))}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.btn{background:#1e2128;color:var(--text);border:1px solid var(--line);padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit;font-weight:600;transition:.15s}
+.btn:hover{background:#262a33}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#ff6a3d);border-color:transparent}
+.btn.primary:hover{filter:brightness(1.1)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.link{background:none;border:0;color:var(--muted);cursor:pointer;font:inherit}
+.link:hover{color:var(--text)}
+
+.layout{flex:1;display:grid;grid-template-columns:1fr 340px;min-height:0}
+.stage{padding:20px;display:flex;flex-direction:column;gap:12px;min-width:0;align-items:center;justify-content:center}
+.drop{width:100%;max-width:900px;aspect-ratio:16/9;border:2px dashed #353946;border-radius:16px;display:grid;place-items:center;cursor:pointer;transition:.2s;text-align:center;background:#101217}
+.drop:hover,.drop.over{border-color:var(--accent);background:#171219}
+.drop-icon{font-size:34px;color:var(--accent)}
+.drop h2{margin:6px 0 4px}
+.drop p{margin:0;color:var(--muted)}
+.drop small{color:#5d6272}
+
+.canvas-wrap{position:relative;max-width:100%;line-height:0;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);background:#000}
+#view{max-width:100%;max-height:calc(100vh - 190px);width:auto;height:auto;display:block}
+.badge{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.7);padding:4px 10px;border-radius:6px;font-weight:700;font-size:12px;letter-spacing:1px;line-height:1.4}
+.stage-bar{display:flex;align-items:center;gap:10px;width:100%;max-width:900px}
+.spacer{flex:1}
+.hint{color:var(--muted);font-size:12px}
+.inline{display:flex;align-items:center;gap:8px;color:var(--muted)}
+select{background:#1e2128;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit}
+
+.panel{background:var(--panel);border-left:1px solid var(--line);padding:18px;overflow:auto;max-height:calc(100vh - 57px)}
+.panel h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted)}
+.row-head{display:flex;justify-content:space-between;align-items:center;margin-top:20px}
+.row-head h3{margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:#1e2128;border:1px solid var(--line);color:var(--text);padding:7px 12px;border-radius:999px;cursor:pointer;font:inherit;font-size:13px;font-weight:600;transition:.15s}
+.chip:hover{border-color:#444a5a}
+.chip.active{background:linear-gradient(135deg,var(--accent),#ff6a3d);border-color:transparent}
+
+.sl{margin:12px 0}
+.sl-top{display:flex;justify-content:space-between;color:var(--muted);font-size:12.5px;margin-bottom:4px}
+.sl-top b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent);height:18px;margin:0}
+.group{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#5d6272}
+
+@media (max-width:860px){
+  .layout{grid-template-columns:1fr}
+  .panel{border-left:0;border-top:1px solid var(--line);max-height:none}
+  #view{max-height:60vh}
+}
+
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span> Thumbnail Grader</div>
+  <div class="top-actions">
+    <button id="btnOpen" class="btn">Upload image</button>
+    <button id="btnPng" class="btn primary" disabled>Download PNG</button>
+    <button id="btnJpg" class="btn" disabled>Download JPG</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage">
+    <div id="drop" class="drop">
+      <div class="drop-inner">
+        <div class="drop-icon">⬆</div>
+        <h2>Drop an image here</h2>
+        <p>or click to browse &bull; or paste with <kbd>Ctrl</kbd>+<kbd>V</kbd></p>
+        <small>Nothing is uploaded. Everything happens in your browser.</small>
+      </div>
+    </div>
+    <div id="canvasWrap" class="canvas-wrap hidden">
+      <canvas id="view"></canvas>
+      <div id="badge" class="badge hidden">ORIGINAL</div>
+    </div>
+    <div class="stage-bar hidden" id="stageBar">
+      <button id="btnCompare" class="btn">Hold to compare</button>
+      <span class="hint">or hold <kbd>\</kbd> key</span>
+      <span class="spacer"></span>
+      <label class="inline">Crop
+        <select id="aspect">
+          <option value="original">Original</option>
+          <option value="1280x720" selected>16:9 · 1280×720</option>
+          <option value="1920x1080">16:9 · 1920×1080</option>
+          <option value="1080x1920">9:16 · 1080×1920</option>
+          <option value="1080x1080">1:1 · 1080×1080</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <h3>Presets</h3>
+    <div id="presets" class="chips"></div>
+    <div class="row-head">
+      <h3>Adjust</h3>
+      <button id="btnReset" class="link">Reset</button>
+    </div>
+    <div id="sliders"></div>
+  </aside>
+</main>
+
+<input id="file" type="file" accept="image/*" hidden>
+<script>
+(() => {
+'use strict';
+
+/* ---------- Controls ---------- */
+const GROUPS = [
+  { name: 'Light', items: [
+    ['exposure',   'Exposure',   -100, 100, 0],
+    ['contrast',   'Contrast',   -100, 100, 0],
+    ['highlights', 'Highlights', -100, 100, 0],
+    ['shadows',    'Shadows',    -100, 100, 0],
+  ]},
+  { name: 'Color', items: [
+    ['temperature','Temperature',-100, 100, 0],
+    ['tint',       'Tint',       -100, 100, 0],
+    ['saturation', 'Saturation', -100, 100, 0],
+    ['vibrance',   'Vibrance',   -100, 100, 0],
+    ['tone',       'Color tone (split-tone)', 0, 100, 0],
+  ]},
+  { name: 'Detail & Look', items: [
+    ['clarity',    'Clarity',      0, 100, 0],
+    ['sharpen',    'Sharpen',      0, 100, 0],
+    ['glow',       'Glow',         0, 100, 0],
+    ['vignette',   'Vignette',     0, 100, 0],
+    ['strength',   'Overall strength', 0, 100, 100],
+  ]},
+];
+const DEFAULTS = {};
+GROUPS.forEach(g => g.items.forEach(i => DEFAULTS[i[0]] = i[4]));
+DEFAULTS.shadowCol = [0.5, 0.5, 0.5];
+DEFAULTS.highCol = [0.5, 0.5, 0.5];
+
+const PRESETS = {
+  'Punchy YouTube': { exposure:8, contrast:28, highlights:-15, shadows:15, saturation:18, vibrance:35, clarity:35, sharpen:40, glow:10, vignette:20 },
+  'MrBeast Pop':    { exposure:12, contrast:35, saturation:30, vibrance:45, temperature:8, clarity:45, sharpen:55, glow:18, vignette:15 },
+  'Teal & Orange':  { contrast:25, saturation:10, vibrance:20, clarity:25, sharpen:30, vignette:25, tone:55, shadowCol:[0.0,0.35,0.45], highCol:[1,0.6,0.25] },
+  'Neon Night':     { exposure:-5, contrast:30, saturation:25, vibrance:40, glow:35, vignette:35, tone:45, shadowCol:[0.35,0.1,0.6], highCol:[0.2,0.9,1] },
+  'Gaming RGB':     { contrast:32, saturation:35, vibrance:40, clarity:20, sharpen:50, glow:25, vignette:25, tone:40, shadowCol:[0.2,0.1,0.5], highCol:[1,0.35,0.6] },
+  'Dark & Moody':   { exposure:-15, contrast:35, highlights:-10, shadows:-10, saturation:-10, clarity:30, vignette:45, tone:30, shadowCol:[0.05,0.15,0.2], highCol:[0.9,0.75,0.55] },
+  'Clean Bright':   { exposure:15, contrast:15, shadows:25, saturation:12, vibrance:25, temperature:4, sharpen:30, glow:8 },
+};
+
+/* ---------- State ---------- */
+const $ = id => document.getElementById(id);
+const view = $('view'), vctx = view.getContext('2d', { willReadFrequently: true });
+let img = null;            // HTMLImageElement
+let params = clone(DEFAULTS);
+let src = null;            // cropped source canvas at full (capped) res
+let preview = null;        // {w,h,data(Uint8ClampedArray)} original preview pixels
+let comparing = false;
+let raf = 0;
+let fileName = 'thumbnail';
+
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+
+/* ---------- UI build ---------- */
+const sliderEls = {};
+(function buildUI(){
+  const box = $('sliders');
+  GROUPS.forEach(g => {
+    const h = document.createElement('div'); h.className = 'group'; h.textContent = g.name; box.appendChild(h);
+    g.items.forEach(([key, label, min, max, def]) => {
+      const d = document.createElement('div'); d.className = 'sl';
+      d.innerHTML = `<div class="sl-top"><span>${label}</span><b>${def}</b></div><input type="range" min="${min}" max="${max}" value="${def}">`;
+      const inp = d.querySelector('input'), out = d.querySelector('b');
+      inp.addEventListener('input', () => { params[key] = +inp.value; out.textContent = inp.value; markPreset(null); schedule(); });
+      inp.addEventListener('dblclick', () => { inp.value = def; inp.dispatchEvent(new Event('input')); });
+      sliderEls[key] = { inp, out };
+      box.appendChild(d);
+    });
+  });
+  const pr = $('presets');
+  Object.keys(PRESETS).forEach(name => {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = name;
+    b.onclick = () => applyPreset(name);
+    pr.appendChild(b);
+  });
+})();
+
+function markPreset(name){
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.textContent === name));
+}
+function syncSliders(){
+  for (const k in sliderEls){ sliderEls[k].inp.value = params[k]; sliderEls[k].out.textContent = params[k]; }
+}
+function applyPreset(name){
+  params = Object.assign(clone(DEFAULTS), clone(PRESETS[name]));
+  syncSliders(); markPreset(name); schedule();
+}
+$('btnReset').onclick = () => { params = clone(DEFAULTS); syncSliders(); markPreset(null); schedule(); };
+
+/* ---------- Loading ---------- */
+const fileInput = $('file');
+$('btnOpen').onclick = () => fileInput.click();
+$('drop').onclick = () => fileInput.click();
+fileInput.onchange = () => fileInput.files[0] && loadFile(fileInput.files[0]);
+
+['dragenter','dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave','drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+document.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+document.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) loadFile(item.getAsFile());
+});
+
+function loadFile(file){
+  if (!file.type.startsWith('image/')) return;
+  fileName = (file.name || 'thumbnail').replace(/\.[^.]+$/, '') || 'thumbnail';
+  const url = URL.createObjectURL(file);
+  const im = new Image();
+  im.onload = () => {
+    img = im;
+    URL.revokeObjectURL(url);
+    $('drop').classList.add('hidden');
+    $('canvasWrap').classList.remove('hidden');
+    $('stageBar').classList.remove('hidden');
+    $('btnPng').disabled = $('btnJpg').disabled = false;
+    if (!document.querySelector('.chip.active') && JSON.stringify(params) === JSON.stringify(DEFAULTS)) applyPreset('Punchy YouTube');
+    rebuildSource();
+  };
+  im.onerror = () => alert('Could not read that image.');
+  im.src = url;
+}
+
+$('aspect').onchange = () => img && rebuildSource();
+
+/* Crop-to-cover into the chosen output size (capped at original res) */
+function rebuildSource(){
+  const sel = $('aspect').value;
+  let tw, th;
+  if (sel === 'original'){ tw = img.naturalWidth; th = img.naturalHeight; }
+  else { [tw, th] = sel.split('x').map(Number); }
+  // don't upscale beyond what's useful, cap huge images
+  const MAX = 4096;
+  const s = Math.min(1, MAX / Math.max(tw, th));
+  tw = Math.round(tw * s); th = Math.round(th * s);
+
+  src = document.createElement('canvas'); src.width = tw; src.height = th;
+  const c = src.getContext('2d');
+  c.imageSmoothingQuality = 'high';
+  const k = Math.max(tw / img.naturalWidth, th / img.naturalHeight);
+  const dw = img.naturalWidth * k, dh = img.naturalHeight * k;
+  c.drawImage(img, (tw - dw) / 2, (th - dh) / 2, dw, dh);
+
+  // preview-size version
+  const PM = 1280, ps = Math.min(1, PM / Math.max(tw, th));
+  const pw = Math.round(tw * ps), ph = Math.round(th * ps);
+  const pc = document.createElement('canvas'); pc.width = pw; pc.height = ph;
+  const pctx = pc.getContext('2d', { willReadFrequently: true });
+  pctx.imageSmoothingQuality = 'high';
+  pctx.drawImage(src, 0, 0, pw, ph);
+  preview = { w: pw, h: ph, data: pctx.getImageData(0, 0, pw, ph).data };
+  view.width = pw; view.height = ph;
+  schedule();
+}
+
+/* ---------- Render ---------- */
+function schedule(){
+  if (!preview || raf) return;
+  raf = requestAnimationFrame(() => { raf = 0; render(); });
+}
+function render(){
+  if (!preview) return;
+  const { w, h, data } = preview;
+  $('badge').classList.toggle('hidden', !comparing);
+  if (comparing){
+    vctx.putImageData(new ImageData(new Uint8ClampedArray(data), w, h), 0, 0);
+    return;
+  }
+  const out = grade(data, w, h, params);
+  vctx.putImageData(new ImageData(out, w, h), 0, 0);
+}
+
+/* ---------- Grading engine ---------- */
+function grade(input, w, h, p){
+  const n = w * h * 4;
+  const out = new Uint8ClampedArray(n);
+
+  const exp = Math.pow(2, p.exposure / 100 * 1.5);
+  const con = 1 + p.contrast / 100;
+  const hi = p.highlights / 100 * 0.25;
+  const sh = p.shadows / 100 * 0.25;
+  const tem = p.temperature / 100 * 0.12;
+  const tin = p.tint / 100 * 0.08;
+  const sat = 1 + p.saturation / 100;
+  const vib = p.vibrance / 100;
+  const toneA = p.tone / 100;
+  const sc = p.shadowCol, hc = p.highCol;
+
+  for (let i = 0; i < n; i += 4){
+    let r = input[i] / 255 * exp, g = input[i+1] / 255 * exp, b = input[i+2] / 255 * exp;
+
+    // white balance
+    r += tem; b -= tem; g -= tin; r += tin * 0.5; b += tin * 0.5;
+
+    // shadows / highlights
+    let l = 0.2126 * r + 0.7152 * g + 0.0722 * b; l = clamp01(l);
+    const sm = (1 - l) * (1 - l), hm = l * l;
+    const adj = sh * sm + hi * hm;
+    r += adj; g += adj; b += adj;
+
+    // contrast with soft S-curve
+    r = (r - 0.5) * con + 0.5; g = (g - 0.5) * con + 0.5; b = (b - 0.5) * con + 0.5;
+
+    // saturation + vibrance
+    l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const cs = mx - mn;
+    const vf = 1 + vib * (1 - clamp01(cs * 1.6));
+    const f = sat * (vib >= 0 ? vf : 1 + vib * 0.6);
+    r = l + (r - l) * f; g = l + (g - l) * f; b = l + (b - l) * f;
+
+    // split tone
+    if (toneA > 0){
+      const lt = clamp01(l);
+      const ws = Math.pow(1 - lt, 1.5) * toneA * 0.6;
+      const wh = Math.pow(lt, 1.5) * toneA * 0.6;
+      r += (sc[0] - 0.5) * ws + (hc[0] - 0.5) * wh;
+      g += (sc[1] - 0.5) * ws + (hc[1] - 0.5) * wh;
+      b += (sc[2] - 0.5) * ws + (hc[2] - 0.5) * wh;
+    }
+
+    out[i]   = clamp01(r) * 255;
+    out[i+1] = clamp01(g) * 255;
+    out[i+2] = clamp01(b) * 255;
+    out[i+3] = 255;
+  }
+
+  // blur-based effects
+  const m = Math.max(w, h);
+  if (p.clarity > 0 || p.glow > 0){
+    const big = boxBlur(out, w, h, Math.max(2, Math.round(m * 0.012)));
+    const cl = p.clarity / 100 * 0.9, gl = p.glow / 100 * 0.6;
+    for (let i = 0; i < n; i += 4){
+      for (let c = 0; c < 3; c++){
+        let v = out[i+c] / 255;
+        const bl = big[i+c] / 255;
+        if (cl) v += (v - bl) * cl;
+        if (gl){ const gb = clamp01(bl * 1.15); v = 1 - (1 - clamp01(v)) * (1 - gb * gl); }
+        out[i+c] = clamp01(v) * 255;
+      }
+    }
+  }
+  if (p.sharpen > 0){
+    const small = boxBlur(out, w, h, Math.max(1, Math.round(m * 0.0012)));
+    const amt = p.sharpen / 100 * 1.6;
+    for (let i = 0; i < n; i += 4){
+      for (let c = 0; c < 3; c++){
+        out[i+c] = out[i+c] + (out[i+c] - small[i+c]) * amt;
+      }
+    }
+  }
+
+  // vignette + overall strength blend with original
+  const vg = p.vignette / 100, st = p.strength / 100;
+  if (vg > 0 || st < 1){
+    const cx = w / 2, cy = h / 2, maxd = Math.hypot(cx, cy);
+    for (let y = 0, i = 0; y < h; y++){
+      for (let x = 0; x < w; x++, i += 4){
+        let k = 1;
+        if (vg > 0){
+          const d = Math.hypot(x - cx, y - cy) / maxd;
+          k = 1 - vg * 0.75 * Math.pow(clamp01((d - 0.35) / 0.65), 1.6);
+        }
+        for (let c = 0; c < 3; c++){
+          let v = out[i+c] * k;
+          if (st < 1) v = input[i+c] + (v - input[i+c]) * st;
+          out[i+c] = v;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/* 2-pass separable box blur (approximates gaussian), RGB only */
+function boxBlur(srcData, w, h, r){
+  let a = new Uint8ClampedArray(srcData), b = new Uint8ClampedArray(srcData.length);
+  for (let pass = 0; pass < 2; pass++){
+    blurAxis(a, b, w, h, r, true);
+    blurAxis(b, a, w, h, r, false);
+  }
+  return a;
+}
+function blurAxis(s, d, w, h, r, horiz){
+  const len = horiz ? w : h, lines = horiz ? h : w;
+  const step = horiz ? 4 : w * 4, lineStep = horiz ? w * 4 : 4;
+  const div = r * 2 + 1;
+  for (let l = 0; l < lines; l++){
+    const base = l * lineStep;
+    for (let c = 0; c < 3; c++){
+      let sum = 0;
+      for (let i = -r; i <= r; i++){
+        const j = i < 0 ? 0 : i >= len ? len - 1 : i;
+        sum += s[base + j * step + c];
+      }
+      for (let x = 0; x < len; x++){
+        d[base + x * step + c] = sum / div;
+        const add = x + r + 1, rem = x - r;
+        sum += s[base + (add >= len ? len - 1 : add) * step + c];
+        sum -= s[base + (rem < 0 ? 0 : rem) * step + c];
+      }
+    }
+    // alpha
+    for (let x = 0; x < len; x++) d[base + x * step + 3] = 255;
+  }
+}
+
+/* ---------- Compare ---------- */
+const cmp = $('btnCompare');
+const setCmp = v => { comparing = v; schedule(); };
+['mousedown','touchstart'].forEach(e => cmp.addEventListener(e, ev => { ev.preventDefault(); setCmp(true); }));
+['mouseup','mouseleave','touchend','touchcancel'].forEach(e => cmp.addEventListener(e, () => setCmp(false)));
+document.addEventListener('keydown', e => { if (e.key === '\\' && !e.repeat) setCmp(true); });
+document.addEventListener('keyup', e => { if (e.key === '\\') setCmp(false); });
+view.addEventListener('mousedown', () => setCmp(true));
+window.addEventListener('mouseup', () => comparing && setCmp(false));
+
+/* ---------- Export (full resolution) ---------- */
+function exportImage(type){
+  if (!src) return;
+  const w = src.width, h = src.height;
+  const c = src.getContext('2d', { willReadFrequently: true });
+  const data = c.getImageData(0, 0, w, h).data;
+  const out = grade(data, w, h, params);
+  const oc = document.createElement('canvas'); oc.width = w; oc.height = h;
+  oc.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
+  const ext = type === 'image/png' ? 'png' : 'jpg';
+  oc.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${fileName}-graded.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, type, 0.95);
+}
+$('btnPng').onclick = () => exportImage('image/png');
+$('btnJpg').onclick = () => exportImage('image/jpeg');
+})();
+
+</script>
+</body>
+</html>
